@@ -3,8 +3,9 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include "bsec.h"
 #include "config.h"  // Inclure le fichier de configuration
+#include <BlynkSimpleEsp32.h>
+#include "bsec.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
@@ -31,8 +32,14 @@ String weatherIcon = "";
 unsigned long lastWeatherUpdate = 0;
 const unsigned long weatherUpdateInterval = 600000; // 10 minutes en millisecondes
 
+// Variables pour Blynk
+BlynkTimer timer;
+unsigned long lastBlynkUpdate = 0;
+const unsigned long blynkUpdateInterval = 5000; // 5 secondes en millisecondes
+
 // Déclaration préalable des fonctions
 void updateWeatherData();
+void sendDataToBlynk();
 
 void setup() {
   // Initialisation du port série
@@ -68,6 +75,13 @@ void setup() {
   Serial.print("Adresse IP: ");
   Serial.println(WiFi.localIP());
   
+  // Connexion à Blynk
+  Serial.println("Connexion à Blynk...");
+  Blynk.begin(BLYNK_AUTH_TOKEN, WIFI_SSID, WIFI_PASSWORD);
+      
+  // Configuration du timer Blynk pour envoyer les données périodiquement
+  timer.setInterval(blynkUpdateInterval, sendDataToBlynk);
+  
   // Initialisation du capteur BME680 avec BSEC
   iaqSensor.begin(0x77, Wire);
   Serial.println("BSEC version " + 
@@ -96,6 +110,29 @@ void setup() {
   
   // Première mise à jour météo
   updateWeatherData();
+}
+
+// Fonction pour envoyer les données à Blynk
+void sendDataToBlynk() {
+  if (WiFi.status() == WL_CONNECTED) {
+    // Envoi des données du capteur BME680
+    Blynk.virtualWrite(V0, iaqSensor.temperature);       // Température
+    Blynk.virtualWrite(V1, iaqSensor.humidity);          // Humidité
+    Blynk.virtualWrite(V2, iaqSensor.pressure / 100.0);  // Pression
+    Blynk.virtualWrite(V3, iaqSensor.iaq);               // IAQ
+    Blynk.virtualWrite(V4, iaqSensor.co2Equivalent);     // CO2 équivalent
+    Blynk.virtualWrite(V5, iaqSensor.breathVocEquivalent); // VOC équivalent
+    
+    // Envoi des données météo si disponibles
+    if (weatherTemp != 0) {
+      Blynk.virtualWrite(V6, weatherTemp);                 // Température extérieure
+      Blynk.virtualWrite(V7, weatherHumidity);             // Humidité extérieure
+      Blynk.virtualWrite(V8, weatherDescription);          // Description météo
+      Blynk.virtualWrite(V9, weatherPressure);             // Pression extérieure
+    }
+    
+    Serial.println("Données envoyées à Blynk");
+  }
 }
 
 // Fonction pour récupérer les données météo d'OpenWeather
@@ -155,6 +192,10 @@ void updateWeatherData() {
 
 void loop() {
   unsigned long time_trigger = millis();
+  
+  // Exécution de Blynk et du timer
+  Blynk.run();
+  timer.run();
   
   // Mise à jour des données météo toutes les 10 minutes
   if (time_trigger - lastWeatherUpdate > weatherUpdateInterval) {
@@ -280,7 +321,7 @@ void loop() {
     
     // Statut WiFi sur l'écran OLED
     display.setCursor(70, 52);
-    display.print(F(" WiFi: "));
+    display.print(F("WiFi: "));
     if (WiFi.status() == WL_CONNECTED) {
       display.println(F("OK"));
     } else {
