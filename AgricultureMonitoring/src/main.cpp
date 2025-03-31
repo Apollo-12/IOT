@@ -2,10 +2,7 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include "bsec.h"
-
-// Configuration WiFi
-const char* ssid = "SSID";
-const char* password = "PASSWORD";
+#include "config.h"  // Inclure le fichier de configuration
 
 // Configuration des pins I2C
 const int SDA_PIN = 21;
@@ -25,7 +22,7 @@ void setup() {
   
   // Connexion au WiFi
   Serial.print("Connexion au WiFi");
-  WiFi.begin(ssid, password);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
