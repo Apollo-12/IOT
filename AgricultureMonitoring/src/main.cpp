@@ -280,7 +280,7 @@ void loop() {
     
     // Statut WiFi sur l'écran OLED
     display.setCursor(70, 52);
-    display.print(F("WiFi: "));
+    display.print(F(" WiFi: "));
     if (WiFi.status() == WL_CONNECTED) {
       display.println(F("OK"));
     } else {
