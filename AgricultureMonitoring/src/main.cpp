@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include "bsec.h"
 #include "config.h"  // Inclure le fichier de configuration
 #include <Adafruit_GFX.h>
@@ -19,6 +21,18 @@ Bsec iaqSensor;
 #define OLED_RESET -1        // Reset pin (ou -1 si partage de la ligne de reset Arduino)
 #define SCREEN_ADDRESS 0x3C  // Adresse I2C typique pour l'écran SSD1306 (0x3C ou 0x3D)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Variables pour stocker les données météo
+float weatherTemp = 0;
+float weatherHumidity = 0;
+float weatherPressure = 0;
+String weatherDescription = "";
+String weatherIcon = "";
+unsigned long lastWeatherUpdate = 0;
+const unsigned long weatherUpdateInterval = 600000; // 10 minutes en millisecondes
+
+// Déclaration préalable des fonctions
+void updateWeatherData();
 
 void setup() {
   // Initialisation du port série
@@ -79,10 +93,73 @@ void setup() {
   iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
   
   Serial.println("BSEC et BME680 initialisés avec succès");
+  
+  // Première mise à jour météo
+  updateWeatherData();
+}
+
+// Fonction pour récupérer les données météo d'OpenWeather
+void updateWeatherData() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "http://api.openweathermap.org/data/2.5/weather?q=";
+    url += CITY;
+    url += ",";
+    url += COUNTRY_CODE;
+    url += "&units=metric&appid=";
+    url += OPENWEATHER_API_KEY;
+    
+    http.begin(url);
+    int httpCode = http.GET();
+    
+    if (httpCode > 0) {
+      String payload = http.getString();
+      
+      // Utiliser ArduinoJson pour analyser la réponse
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, payload);
+      
+      if (!error) {
+        weatherTemp = doc["main"]["temp"];
+        weatherHumidity = doc["main"]["humidity"];
+        weatherPressure = doc["main"]["pressure"];
+        weatherDescription = doc["weather"][0]["description"].as<String>();
+        weatherIcon = doc["weather"][0]["icon"].as<String>();
+        
+        Serial.println("---------------------------------------------------");
+        Serial.println("Données météo externes récupérées");
+        Serial.print("Température: ");
+        Serial.print(weatherTemp);
+        Serial.println(" °C");
+        Serial.print("Humidité: ");
+        Serial.print(weatherHumidity);
+        Serial.println(" %");
+        Serial.print("Pression: ");
+        Serial.print(weatherPressure);
+        Serial.println(" hPa");
+        Serial.print("Description: ");
+        Serial.println(weatherDescription);
+      } else {
+        Serial.print("Erreur de désérialisation JSON: ");
+        Serial.println(error.c_str());
+      }
+    } else {
+      Serial.print("Erreur HTTP: ");
+      Serial.println(httpCode);
+    }
+    
+    http.end();
+    lastWeatherUpdate = millis();
+  }
 }
 
 void loop() {
   unsigned long time_trigger = millis();
+  
+  // Mise à jour des données météo toutes les 10 minutes
+  if (time_trigger - lastWeatherUpdate > weatherUpdateInterval) {
+    updateWeatherData();
+  }
   
   // Lecture des données du capteur à intervalles réguliers
   if (iaqSensor.run()) { // Si de nouvelles données sont disponibles
@@ -162,10 +239,47 @@ void loop() {
     display.print(iaqSensor.iaqAccuracy);
     display.println(F(")"));
     
-    // WiFi et CO2
+    // CO2
     display.setCursor(0, 52);
     display.print(F("CO2: "));
     display.print(iaqSensor.co2Equivalent, 0);
+    display.print(F(" ppm"));
+    
+    // Si nous avons des données météo, afficher une comparaison dans le moniteur série uniquement
+    if (weatherTemp != 0) {
+      Serial.println("\n---------------------------------------------------");
+      Serial.println("Comparaison intérieur/extérieur:");
+      Serial.println("                Intérieur   Extérieur   Différence");
+      Serial.print("Température:    ");
+      Serial.print(iaqSensor.temperature, 1);
+      Serial.print(" °C     ");
+      Serial.print(weatherTemp, 1);
+      Serial.print(" °C     ");
+      Serial.print(iaqSensor.temperature - weatherTemp, 1);
+      Serial.println(" °C");
+      
+      Serial.print("Humidité:       ");
+      Serial.print(iaqSensor.humidity, 1);
+      Serial.print(" %      ");
+      Serial.print(weatherHumidity, 1);
+      Serial.print(" %      ");
+      Serial.print(iaqSensor.humidity - weatherHumidity, 1);
+      Serial.println(" %");
+      
+      Serial.print("Pression:       ");
+      Serial.print(iaqSensor.pressure / 100.0, 1);
+      Serial.print(" hPa    ");
+      Serial.print(weatherPressure, 1);
+      Serial.print(" hPa    ");
+      Serial.print((iaqSensor.pressure / 100.0) - weatherPressure, 1);
+      Serial.println(" hPa");
+      
+      Serial.print("Météo extérieure: ");
+      Serial.println(weatherDescription);
+    }
+    
+    // Statut WiFi sur l'écran OLED
+    display.setCursor(70, 52);
     display.print(F(" WiFi: "));
     if (WiFi.status() == WL_CONNECTED) {
       display.println(F("OK"));
