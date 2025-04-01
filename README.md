@@ -187,7 +187,7 @@ Le dashboard Blynk comprend :
 
 ## Licence
 
-Ce projet est sous licence MIT.
+Ce projet est sous [licence MIT](LICENSE).
 
 ---
 
