@@ -8,10 +8,16 @@
 #include "bsec.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <ESP32Servo.h>  // Ajout de la bibliothèque pour le servomoteur
 
 // Configuration des pins I2C
 const int SDA_PIN = 21;
 const int SCL_PIN = 22;
+
+// Configuration du servomoteur
+Servo valve;          // Création de l'objet servo
+const int SERVO_PIN = 13;  // Pin pour le contrôle du servo
+bool valveOpen = false;    // État de la valve (fermée par défaut)
 
 // Création d'une instance BSEC
 Bsec iaqSensor;
@@ -40,6 +46,20 @@ const unsigned long blynkUpdateInterval = 5000; // 5 secondes en millisecondes
 // Déclaration préalable des fonctions
 void updateWeatherData();
 void sendDataToBlynk();
+
+// Fonction pour contrôler le servomoteur depuis Blynk
+BLYNK_WRITE(V10) {  // V10 est la pin virtuelle pour contrôler la valve
+  int value = param.asInt();
+  if (value == 1) {
+    valve.write(180);  // Ouvrir la valve (position 180°)
+    valveOpen = true;
+    Serial.println("Valve ouverte");
+  } else {
+    valve.write(0);    // Fermer la valve (position 0°)
+    valveOpen = false;
+    Serial.println("Valve fermée");
+  }
+}
 
 void setup() {
   // Initialisation du port série
@@ -106,7 +126,13 @@ void setup() {
   
   iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
   
-  Serial.println("BSEC et BME680 initialisés avec succès");
+  // Initialisation du servo
+  ESP32PWM::allocateTimer(0);
+  valve.setPeriodHertz(50);      // PWM à 50Hz standard pour les servos
+  valve.attach(SERVO_PIN, 500, 2400);  // Ajustez min/max selon votre servo
+  valve.write(0);                // Initialiser à la position fermée
+  
+  Serial.println("BSEC, BME680 et servomoteur initialisés avec succès");
   
   // Première mise à jour météo
   updateWeatherData();
@@ -130,6 +156,9 @@ void sendDataToBlynk() {
       Blynk.virtualWrite(V8, weatherDescription);          // Description météo
       Blynk.virtualWrite(V9, weatherPressure);             // Pression extérieure
     }
+    
+    // Envoi de l'état de la valve
+    Blynk.virtualWrite(V10, valveOpen ? 1 : 0);          // État de la valve
     
     Serial.println("Données envoyées à Blynk");
   }
@@ -244,6 +273,9 @@ void loop() {
     } else {
       Serial.println("Déconnecté");
     }
+    
+    Serial.print("État de la valve: ");
+    Serial.println(valveOpen ? "Ouverte" : "Fermée");
     
     // Mise à jour de l'affichage OLED
     display.clearDisplay();
